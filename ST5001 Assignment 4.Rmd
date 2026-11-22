@@ -1,0 +1,163 @@
+---
+title: "ST5001 Assignment 4"
+author: "Brian Connolly - 25105688"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+# Adding the libraries needed for the assignment
+library(ggridges)
+library(viridis)
+library(ggpubr)
+library(infer)
+library(dplyr)
+library(table1)
+library(tolerance)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+## Load in the data and provide a glimpse of the data in the csv file
+```{r}
+# read data in from csv provided
+ab_data <- read.csv("ab_test.csv")
+
+# get an overview od fata from csv
+glimpse(ab_data)
+```
+### Design of design used
+The design of this test used is of a two sample (A/B), randomized study used between subjects with an experimental design.
+The data in the csv is split into 3 columns (Variant, Time, Resolved). The Variant and Resolved Columns contain data which are of type string characters and the column Time contains double numeric values.
+There are 300 rows of data which based on assignment objectives, it symbolises there are 300 unique visitors to the website tracked for Time spent on site and the proportion of items which have been resolved to the observed of the current website.
+They were randomly split unknowingly into whether they saw the new variant on the site or not with each participant given a variant of A or B meaning old site or new site. Participants in this study were unaware of if they were part of the study or not.
+The responses were Time which is continuous metric and resolved which is binary and the between subject factor being Variant which has two levels A or B.
+We are aiming to show if the new site is better than the current site in terms of an improved (average) visit through time and the proportion of items resolved.
+
+### Concern of the study design
+There are some concerns regarding the study design which I have listed below:
+Size of the study - while there are 300 unique visitors tracked for responses and it does help with sampling the statistical possibility to detect if there are or will be significant shifts in the Time variable means, it doesnt give us enough evidence to ascertain the proportion of the difference between the two variants.
+Possibility of confounding Variables - We can't say if the users tracked were tracked at random periods of the day or of days of the week or weeks of the month so we cannot say if traffic to the website at the particular times differed from one another - example if its during black friday for 150 of the users tracked and a normal tuesday for the other 150 users and this leads to questioning the data for confounding variables.
+
+## Numerical Summaries
+```{r}
+# Numerical Summary Variant and Time
+ab_data %>% group_by(Variant)%>%
+  summarise(sample.size=n(),
+            Mean = mean(Time),
+            st.Dev = sd(Time),
+            Median = median(Time),
+            IQR = IQR(Time),
+            Min = min(Time),
+            Max = max(Time))
+
+# Resoved by Variant
+ab_data %>% 
+  count(Variant, Resolved) %>%
+  group_by(Variant) %>%
+  mutate(percentage = n / sum(n) * 100)
+
+
+# Table showing the counts and percentages for if query was resolved grouped by the Variants
+table1(~ Resolved | Variant, data=ab_data)
+
+```
+```{r}
+# Graphical summaries of the data
+
+# Boxplot for Time and Variant
+ggplot(ab_data, aes(x = Resolved, y = Time, colour = Resolved)) + 
+  geom_boxplot() +
+  labs(title = "Time spent on site by whether the query was resolved (Yes/No)",
+       subtitle = "Blue point shows the Mean",
+       y = "Time (sec)",
+       x = " ") + 
+  stat_summary(fun = mean, geom="point", shape = 21, size = 5, colour = "skyblue", fill="blue") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+# Density plot used with rainclouds
+ggplot(ab_data, aes(x = Time,
+                    y = Resolved,
+                    fill = ..x..)) +
+  geom_density_ridges_gradient(jittered_points = TRUE, position = "raincloud",
+                               alpha = 0.7, scale = 0.9) +
+  scale_fill_viridis(name="Resolved", option = "E") +
+  labs(x = "Duery Execution Resolved", y = "") +
+  labs(colour="Resolved") +
+  ggtitle("Was the Query resolved?")
+```
+
+```{r}
+# Histogram of the distributions
+ggplot(ab_data, aes(x=Time)) +
+  geom_histogram(bins=20) +
+  facet_wrap(~ Variant) +
+  theme_minimal()
+```
+
+```{r}
+# Normality checks with QQ plots
+ggplot(ab_data, aes(sample = Time)) +
+  stat_qq() + stat_qq_line() +
+  facet_wrap(~ Variant) + 
+  theme_minimal()
+```
+
+
+```{r}
+# Bar chart for if query was resolved for each variant
+ggplot(ab_data, aes(x = Variant, fill = Resolved)) + 
+  geom_bar(position = "fill", width = 0.6) + 
+  scale_y_continuous(name = "Proportion of Queries Resolved",
+                     labels=scales::label_percent()) +
+                    labs(title="Resolved Queries by Website Variant Type",
+                         subtitle="Comparing Current Site (A) with a new Variant (B)",
+                         x = "Website Variant", fill = "Query Resolved?") + 
+                        theme_minimal()
+```
+
+## Formal Analysis
+```{r}
+### Hypothesis Testing
+#### Two sample t test
+t.test(Time ~ Variant, data = ab_data)
+
+#### individual sample t tests
+t.test(ab_data$Time[ab_data$Variant == 'A'])$conf.int
+t.test(ab_data$Time[ab_data$Variant == 'B'])$conf.int
+
+#### Wilcoxon Test without assuming normality
+wilcox.test(Time ~ Variant, data = ab_data, conf.int = TRUE)
+
+#### a random customer will have a visit through time on the new site of less than three minutes;
+bTime <- ab_data$Time[ab_data$Variant == "B"]
+pnorm(180, mean = mean(bTime), sd = sd(bTime))
+
+mean(bTime < 180)
+
+
+#### at least 70% of queries on the new site will be resolved in a day where it is assumed that 55 customers visit the site in a day.
+
+#### Get at least 70% using ceiling function in R
+minAmount <- ceiling(0.7 *55)
+minAmount
+
+bResolved <- mean(ab_data$Resolved[ab_data$Variant == "B"] == "Yes")
+1 - pbinom(38, size=55, prob = bResolved)
+
+### Interval Estimates
+```
+
+```{r}
+## 95% /95% tolerance interval
+### tolerance interval on the Variant A
+normtol.int(ab_data$Time[ab_data$Variant == "A"], alpha = 0.05, P = 0.95, side = 2)
+
+### tolerance interval on the Variant B
+normtol.int(ab_data$Time[ab_data$Variant == "B"], alpha = 0.05, P = 0.95, side = 2)
+```
+
+
